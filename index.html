@@ -39,8 +39,8 @@
   .hearts{display:flex;gap:4px;font-size:18px}
   .heart.spent{filter:grayscale(1);opacity:.35}
   /* board */
-  .board-wrap{background:var(--panel);border-radius:24px;box-shadow:var(--shadow);padding:12px;margin-bottom:16px}
-  .board{display:grid;gap:0;width:100%;border-radius:12px;overflow:hidden;box-shadow:0 0 0 3px var(--cell-d)}
+  .board-wrap{background:var(--panel);border-radius:24px;box-shadow:var(--shadow);padding:12px;margin:0 auto 16px;width:fit-content;max-width:100%}
+  .board{display:grid;gap:0;width:100%;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 0 0 3px var(--cell-d)}
   .cell{position:relative;aspect-ratio:1/1;display:grid;place-items:center;cursor:pointer;touch-action:none;min-width:0;min-height:0}
   .cell.l{background:var(--cell-l)} .cell.d{background:var(--cell-d)}
   .cell.pv{box-shadow:inset 0 0 0 100px var(--preview)}
@@ -78,7 +78,7 @@
   /* floating drag ghost */
   .ghost{position:fixed;font-family:"Segoe UI Symbol","Noto Sans Symbols2","DejaVu Sans",serif;font-variant-emoji:text;font-size:clamp(46px,14vw,82px);line-height:1;pointer-events:none;z-index:90;transform:translate(-50%,-50%);filter:drop-shadow(0 6px 8px rgba(80,50,30,.45));text-shadow:0 0 3px #fff}
   /* actions */
-  .actions{display:flex;justify-content:center;gap:10px;margin-top:8px}
+  .actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:8px}
   .btn{border:none;border-radius:14px;padding:11px 18px;font-family:'Fredoka';font-weight:500;font-size:15px;cursor:pointer;box-shadow:var(--shadow);transition:transform .15s;display:flex;align-items:center;gap:7px}
   .btn:hover{transform:translateY(-2px)} .btn:active{transform:scale(.95)}
   .btn.ghostb{background:var(--panel);color:var(--rose-d)} .btn.primary{background:var(--rose);color:#fff} .btn.go{background:var(--sage);color:#fff}
@@ -123,6 +123,7 @@
   <div class="actions">
     <button class="btn ghostb" id="btnHint">💡 İpucu</button>
     <button class="btn primary" id="btnClear">Tahtayı boşalt</button>
+    <button class="btn ghostb" id="btnSkip">Atla →</button>
   </div>
 </div>
 
@@ -184,38 +185,65 @@ function attacks(type,r1,c1,r2,c2){
 const conflict=(p,q)=>attacks(p.type,p.r,p.c,q.r,q.c)||attacks(q.type,q.r,q.c,p.r,p.c);
 
 const TIERS=[
-  {N:5,pieces:['R','R','N']},
-  {N:5,pieces:['Q','N','N']},
-  {N:5,pieces:['R','R','B','N']},
-  {N:6,pieces:['Q','Q','N']},
-  {N:6,pieces:['R','R','R','N','N']},
-  {N:6,pieces:['Q','R','B','N','K']},
-  {N:7,pieces:['Q','Q','N','N','R']},
-  {N:7,pieces:['Q','Q','Q','N','B','K']},
-  {N:8,pieces:['Q','Q','Q','R','N','N','B']},
-  {N:8,pieces:['Q','Q','Q','Q','N','N','K','B']},
+  {cols:5,rows:5,pieces:['R','R','N']},
+  {cols:5,rows:5,pieces:['Q','N','N']},
+  {cols:5,rows:5,pieces:['R','R','B','N']},
+  {cols:6,rows:6,pieces:['Q','Q','N']},
+  {cols:6,rows:6,pieces:['R','R','R','N','N']},
+  {cols:6,rows:6,pieces:['Q','R','B','N','K']},
+  {cols:7,rows:7,pieces:['Q','Q','N','N','R']},
+  {cols:7,rows:7,pieces:['Q','Q','Q','N','B','K']},
+  {cols:8,rows:8,pieces:['Q','Q','Q','R','N','N','B']},
+  {cols:8,rows:8,pieces:['Q','Q','Q','Q','N','N','K','B']},
+  // taller boards from here — mobile uses the vertical space, difficulty climbs
+  {cols:7,rows:9, pieces:['Q','Q','Q','Q','N','N','B','R']},
+  {cols:7,rows:10,pieces:['Q','Q','Q','Q','N','N','N','B','R','K']},
+  {cols:8,rows:11,pieces:['Q','Q','Q','Q','Q','N','N','N','B','R']},
+  {cols:8,rows:12,pieces:['Q','Q','Q','Q','Q','N','N','N','N','B','R','K']},
+  {cols:8,rows:13,pieces:['Q','Q','Q','Q','Q','Q','N','N','N','B','R']},
 ];
-function levelParams(level){
-  if(level<=TIERS.length) return TIERS[level-1];
-  const N=8, bag=['Q','Q','Q','Q','R','R','N','N','N','B','K'];
-  const count=Math.min(6+Math.floor((level-TIERS.length)/2),12), pieces=[];
-  for(let i=0;i<count;i++) pieces.push(bag[(Math.random()*bag.length)|0]);
-  return {N,pieces};
-}
-function genSolution(N,list,tries=6000){
+function genSolution(rows,cols,list,tries=6000){
   for(let t=0;t<tries;t++){
     const placed=[],occ=new Set(),order=[...list].sort((a,b)=>STRENGTH[b]-STRENGTH[a]); let ok=true;
     for(const type of order){
       const cands=[];
-      for(let r=0;r<N;r++)for(let c=0;c<N;c++){
-        if(occ.has(r*N+c)) continue;
+      for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+        if(occ.has(r*cols+c)) continue;
         if(placed.every(p=>!conflict({type,r,c},p))) cands.push([r,c]);
       }
       if(!cands.length){ok=false;break;}
-      const [r,c]=cands[(Math.random()*cands.length)|0]; placed.push({r,c,type}); occ.add(r*N+c);
+      const [r,c]=cands[(Math.random()*cands.length)|0]; placed.push({r,c,type}); occ.add(r*cols+c);
     }
     if(ok&&placed.length===list.length) return placed;
   } return null;
+}
+// Procedural levels (beyond the handcrafted tiers): place a non-attacking set directly,
+// so the level is always solvable by construction. Returns placed pieces (= the solution).
+function buildLevel(rows,cols,target){
+  const pool=['Q','Q','Q','N','N','B','R','K'];
+  const placed=[],occ=new Set(); let guard=0;
+  while(placed.length<target && guard<target*80){
+    guard++;
+    const r=(Math.random()*rows)|0, c=(Math.random()*cols)|0;
+    if(occ.has(r*cols+c)) continue;
+    const safe=pool.filter(type=>placed.every(p=>!conflict({type,r,c},p)));
+    if(!safe.length) continue;
+    const type=safe[(Math.random()*safe.length)|0];
+    placed.push({r,c,type}); occ.add(r*cols+c);
+  }
+  return placed;
+}
+function getLevel(level){
+  if(level<=TIERS.length){
+    const t=TIERS[level-1];
+    const sol=genSolution(t.rows,t.cols,t.pieces)||genSolution(t.rows,t.cols,t.pieces,12000);
+    return {cols:t.cols,rows:t.rows,pieces:t.pieces.slice(),solution:sol};
+  }
+  const over=level-TIERS.length;
+  const cols=8, rows=Math.min(13+Math.floor(over/2),16);
+  const target=Math.min(12+over, Math.floor(rows*cols*0.17));
+  const sol=buildLevel(rows,cols,target);
+  return {cols,rows,pieces:sol.map(p=>p.type),solution:sol};
 }
 
 let S=null, DRAG=null;
@@ -223,12 +251,12 @@ const $=id=>document.getElementById(id);
 const nextAvail=()=>S.order.find(t=>S.tray[t]>0)||null;
 
 function startLevel(level){
-  const cfg=levelParams(level);
-  const sol=genSolution(cfg.N,cfg.pieces)||genSolution(cfg.N,cfg.pieces,12000);
+  const cfg=getLevel(level);
   const tray={}; cfg.pieces.forEach(p=>tray[p]=(tray[p]||0)+1);
-  S={level,N:cfg.N,cells:Array.from({length:cfg.N},()=>Array(cfg.N).fill(null)),
+  S={level,cols:cfg.cols,rows:cfg.rows,
+     cells:Array.from({length:cfg.rows},()=>Array(cfg.cols).fill(null)),
      tray,order:Object.keys(tray).sort((a,b)=>STRENGTH[b]-STRENGTH[a]),
-     total:cfg.pieces.length,selected:null,hearts:3,solution:sol,cellEls:[]};
+     total:cfg.pieces.length,selected:null,hearts:3,solution:cfg.solution,cellEls:[]};
   S.selected=nextAvail();
   $('lvlNum').textContent=level;
   setAssist(level);
@@ -249,21 +277,21 @@ function setAssist(level){
   }
 }
 
-function placedList(){const o=[];for(let r=0;r<S.N;r++)for(let c=0;c<S.N;c++)if(S.cells[r][c])o.push({r,c,type:S.cells[r][c]});return o;}
+function placedList(){const o=[];for(let r=0;r<S.rows;r++)for(let c=0;c<S.cols;c++)if(S.cells[r][c])o.push({r,c,type:S.cells[r][c]});return o;}
 function computeConflicts(){
   const pl=placedList(),bad=new Set();
   for(let i=0;i<pl.length;i++)for(let j=i+1;j<pl.length;j++)
-    if(conflict(pl[i],pl[j])){bad.add(pl[i].r*S.N+pl[i].c);bad.add(pl[j].r*S.N+pl[j].c);}
+    if(conflict(pl[i],pl[j])){bad.add(pl[i].r*S.cols+pl[i].c);bad.add(pl[j].r*S.cols+pl[j].c);}
   return bad;
 }
 
 function render(){
-  const b=$('board'); b.style.gridTemplateColumns=`repeat(${S.N},1fr)`; b.innerHTML='';
-  const bad=computeConflicts(); S.cellEls=Array.from({length:S.N},()=>Array(S.N));
-  for(let r=0;r<S.N;r++)for(let c=0;c<S.N;c++){
+  const b=$('board'); b.style.gridTemplateColumns=`repeat(${S.cols},1fr)`; b.innerHTML='';
+  const bad=computeConflicts(); S.cellEls=Array.from({length:S.rows},()=>Array(S.cols));
+  for(let r=0;r<S.rows;r++)for(let c=0;c<S.cols;c++){
     const cell=document.createElement('div');
     cell.className='cell '+(((r+c)%2)?'d':'l'); cell.dataset.r=r; cell.dataset.c=c;
-    const occ=S.cells[r][c], key=r*S.N+c;
+    const occ=S.cells[r][c], key=r*S.cols+c;
     if(occ){
       const sp=document.createElement('span');
       sp.className='piece'+(bad.has(key)?' conflict':'');
@@ -276,13 +304,19 @@ function render(){
     cell.addEventListener('mouseleave',()=>{ if(!DRAG) clearPreview(); });
     S.cellEls[r][c]=cell; b.appendChild(cell);
   }
-  sizePieces(); requestAnimationFrame(sizePieces);
+  fitBoard(); requestAnimationFrame(fitBoard);
 }
-function sizePieces(){
+function fitBoard(){
   const b=$('board'); if(!b||!S) return;
-  const w=b.clientWidth; if(w>0) b.style.setProperty('--piece',(w/S.N*1.1)+'px');
+  const appW=Math.min(472, window.innerWidth-28);
+  const budgetW=appW-24;                                   // board-wrap padding
+  const budgetH=Math.max(200, (window.innerHeight||800)-352); // reserve space for header/tray/etc.
+  let cell=Math.min(budgetW/S.cols, budgetH/S.rows);
+  cell=Math.max(24, Math.min(cell, 88));
+  b.style.width=Math.round(cell*S.cols)+'px';
+  b.style.setProperty('--piece',(cell*1.1)+'px');
 }
-window.addEventListener('resize',sizePieces);
+window.addEventListener('resize',fitBoard);
 
 function renderTray(){
   const t=$('tray'); t.innerHTML='';
@@ -305,7 +339,7 @@ function renderStatus(){
 /* ---------- preview of carried piece's control area ---------- */
 function clearPreview(){
   if(!S.cellEls.length) return;
-  for(let r=0;r<S.N;r++)for(let c=0;c<S.N;c++){
+  for(let r=0;r<S.rows;r++)for(let c=0;c<S.cols;c++){
     const el=S.cellEls[r][c]; if(!el) continue;
     el.classList.remove('pv','pv-ok','pv-bad','pv-neutral','clash');
     const g=el.querySelector('.ghosttgt'); if(g) g.remove();
@@ -318,7 +352,7 @@ function applyPreview(hr,hc,type,mode){
   const target=S.cellEls[hr][hc];
   if(mode!=='none'){                                      // movement preview (reach + landing ring)
     const pl=placedList();
-    for(let r=0;r<S.N;r++)for(let c=0;c<S.N;c++){
+    for(let r=0;r<S.rows;r++)for(let c=0;c<S.cols;c++){
       if(r===hr&&c===hc) continue;
       if(attacks(type,hr,hc,r,c)) S.cellEls[r][c].classList.add('pv');
     }
@@ -427,7 +461,7 @@ function checkWin(){
 function hint(){
   const type=nextAvail(); if(!type){ toast('Yerleştirecek taş kalmadı.'); return; }
   const pl=placedList(),spots=[];
-  for(let r=0;r<S.N;r++)for(let c=0;c<S.N;c++)
+  for(let r=0;r<S.rows;r++)for(let c=0;c<S.cols;c++)
     if(!S.cells[r][c] && pl.every(p=>!conflict({type,r,c},p))) spots.push([r,c]);
   if(!spots.length){ toast('Bu taş için güvenli kare yok — bir taşı geri al.'); return; }
   S.selected=type; renderTray();
@@ -454,8 +488,9 @@ function confetti(){
 let toastT; function toast(m){const el=$('toast');el.textContent=m;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2200);}
 
 $('btnReset').onclick=()=>startLevel(S.level);
-$('btnClear').onclick=()=>{for(let r=0;r<S.N;r++)for(let c=0;c<S.N;c++){const t=S.cells[r][c];if(t){S.tray[t]++;S.cells[r][c]=null;}}S.selected=nextAvail();render();renderTray();renderStatus();};
+$('btnClear').onclick=()=>{for(let r=0;r<S.rows;r++)for(let c=0;c<S.cols;c++){const t=S.cells[r][c];if(t){S.tray[t]++;S.cells[r][c]=null;}}S.selected=nextAvail();render();renderTray();renderStatus();};
 $('btnHint').onclick=hint;
+$('btnSkip').onclick=()=>startLevel(S.level+1);
 $('btnNext').onclick=()=>{$('winScrim').classList.remove('show');startLevel(S.level+1);};
 $('btnHelp').onclick=()=>$('helpScrim').classList.add('show');
 $('btnRetry').onclick=()=>{$('loseScrim').classList.remove('show');startLevel(S.level);};

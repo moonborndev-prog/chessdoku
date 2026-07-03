@@ -716,7 +716,7 @@ function applyPreview(hr,hc,type,mode){
 /* ---------- drag system (unified pointer for mouse + touch) ---------- */
 function beginDrag(type,fromR,fromC,e){
   Snd.pickup();
-  DRAG={type,fromR,fromC,moved:false,sx:e.clientX,sy:e.clientY};
+  DRAG={type,fromR,fromC,moved:false,sx:e.clientX,sy:e.clientY,lift:0,tgt:null};
   if(fromR!=null){ S.cells[fromR][fromC]=null; render(); renderStatus(); } // lift off the board
   S.selected=type;
   const g=document.createElement('div'); g.className='ghost'; g.textContent=PIECES[type].glyph; g.style.color=PIECES[type].color;
@@ -725,7 +725,23 @@ function beginDrag(type,fromR,fromC,e){
   window.addEventListener('pointerup',onDragEnd);
   window.addEventListener('pointercancel',onDragEnd);
 }
-function moveGhost(x,y){ if(DRAG&&DRAG.ghost){DRAG.ghost.style.left=x+'px';DRAG.ghost.style.top=(y-44)+'px';} }
+function moveGhost(x,y){ if(DRAG&&DRAG.ghost){DRAG.ghost.style.left=x+'px';DRAG.ghost.style.top=(y-(DRAG.lift||0))+'px';} }
+function targetCell(x,y){
+  // the PIECE is the reference, not the finger: aim from the lifted ghost's center
+  const py=y-(DRAG&&DRAG.lift||0);
+  const cand=cellFromPoint(x,py);
+  if(!cand) return null;
+  // sticky targeting: near a cell boundary, keep the current target (no flicker-snapping)
+  if(DRAG&&DRAG.tgt&&(DRAG.tgt.r!==cand.r||DRAG.tgt.cc!==cand.cc)){
+    const el=S.cellEls[cand.r]&&S.cellEls[cand.r][cand.cc];
+    if(el&&el.getBoundingClientRect){
+      const rc=el.getBoundingClientRect(), m=Math.min(rc.width,rc.height)*0.16;
+      const inx=Math.min(x-rc.left,rc.right-x), iny=Math.min(py-rc.top,rc.bottom-py);
+      if(inx<m||iny<m) return DRAG.tgt;
+    }
+  }
+  return cand;
+}
 function cellFromPoint(x,y){
   const el=document.elementFromPoint(x,y); if(!el) return null;
   const c=el.closest('.cell'); if(!c||!S.cellEls.length) return null;
@@ -733,9 +749,12 @@ function cellFromPoint(x,y){
 }
 function onDragMove(e){
   if(!DRAG) return; e.preventDefault();
-  if(Math.hypot(e.clientX-DRAG.sx,e.clientY-DRAG.sy)>6) DRAG.moved=true;
+  const dist=Math.hypot(e.clientX-DRAG.sx,e.clientY-DRAG.sy);
+  if(dist>6) DRAG.moved=true;
+  DRAG.lift=Math.max(DRAG.lift,Math.min(44,dist*1.2));   // piece rises above the finger as you start sliding
   moveGhost(e.clientX,e.clientY);
-  const cell=cellFromPoint(e.clientX,e.clientY);
+  const cell=targetCell(e.clientX,e.clientY);
+  DRAG.tgt=cell;
   if(cell) applyPreview(cell.r,cell.cc,DRAG.type); else clearPreview();
 }
 function onDragEnd(e){
@@ -744,8 +763,8 @@ function onDragEnd(e){
   window.removeEventListener('pointercancel',onDragEnd);
   if(DRAG.ghost) DRAG.ghost.remove();
   clearPreview();
-  const cell=cellFromPoint(e.clientX,e.clientY);
   const d=DRAG; DRAG=null;
+  const cell=d.tgt;                                       // what you saw is where it lands
 
   // simple taps (no real movement)
   if(!d.moved){
@@ -768,7 +787,7 @@ function onCellDown(e,r,c){
   if(!S.blocks.has(r+':'+c) && S.selected && S.tray[S.selected]>0){   // hold the selected piece: slide to aim, release to place
     e.preventDefault();
     beginDrag(S.selected,null,null,e);
-    DRAG.tapR=r; DRAG.tapC=c;
+    DRAG.tapR=r; DRAG.tapC=c; DRAG.tgt={r,cc:c};
     applyPreview(r,c,S.selected);
   }
 }

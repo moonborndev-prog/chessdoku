@@ -21,7 +21,7 @@
   body{
     font-family:'Nunito',system-ui,sans-serif;color:var(--ink);user-select:none;
     background:radial-gradient(120% 80% at 50% -10%,#FBF4EC 0%,var(--bg) 55%,var(--bg2) 100%);
-    min-height:100%;display:flex;justify-content:center;align-items:flex-start;padding:calc(18px + env(safe-area-inset-top)) 14px calc(74px + env(safe-area-inset-bottom));
+    min-height:100%;display:flex;justify-content:center;align-items:flex-start;padding:calc(18px + env(safe-area-inset-top)) 14px calc(94px + env(safe-area-inset-bottom));
   }
   .app{width:100%;max-width:472px}
   header{display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:8px;margin-bottom:6px}
@@ -323,7 +323,7 @@
       <div class="title"><small>CHESSDOKU</small>
         <span class="lvlnav">
           <button class="lvl-arrow" id="btnPrevLvl" aria-label="Previous level">‹</button>
-          <span>Level <span id="lvlNum">1</span></span>
+          <span id="lvlTitle">Level <span id="lvlNum">1</span></span>
           <button class="lvl-arrow" id="btnNextLvl" aria-label="Next level">›</button>
         </span>
         <span id="lvlBadge" class="lvlbadge" style="display:none"></span>
@@ -837,17 +837,19 @@ function startLevel(level,ovr){
   }
   S.selected=nextAvail();
   $('board').classList.remove('celebrate');
-  $('lvlNum').textContent=level;
   {
     const bd=$('lvlBadge');
-    if(S.daily){ bd.style.display=''; bd.className='lvlbadge daily'; bd.textContent='DAILY CHALLENGE'; }
-    else{
+    if(S.daily){
+      $('lvlTitle').textContent='Daily Challenge';                               // the event name IS the title
+      bd.style.display='none';
+    } else {
+      $('lvlTitle').innerHTML='Level <span id="lvlNum"></span>';
+      $('lvlNum').textContent=level;
       const band=bandOf(level);
       if(band==='H'){ bd.style.display=''; bd.className='lvlbadge hard'; bd.textContent='HARD LEVEL'; }
       else if(band==='X'){ bd.style.display=''; bd.className='lvlbadge xhard'; bd.textContent='SUPER HARD'; }
       else { bd.style.display='none'; }
     }
-    $('lvlNum').textContent=S.daily?'· Daily':level;
     $('btnPrevLvl').style.display=S.daily?'none':'';
     $('btnNextLvl').style.display=S.daily?'none':'';
     $('powersRow').style.display=S.daily?'none':'';                              // no boosters in the daily
@@ -953,13 +955,15 @@ function fitBoard(){
   const hdr=hh(q('header'))||96, st=hh(q('.status'))||44;
   const pw=S.chess?0:(hh(q('.actions.powers'))||58);
   const tl=$('trayLabel'), tlh=(tl&&tl.style.display!=='none')?(hh(tl)||24)+6:0;
-  const trayRow=S.chess?0:104;                             // checkmate mode has no piece tray: the board takes the room
+  const trayRow=S.chess?0:Math.max(104,hh($('tray'))+12);  // measure the real chip row: daily's tall chips must count
+  let topOff=28;                                           // live top offset: body padding + safe area + in-app browser chrome
+  try{ const ap=q('.app'); if(ap&&ap.getBoundingClientRect) topOff=Math.max(0,ap.getBoundingClientRect().top+(window.scrollY||0)); }catch(e){}
   const chrome=hdr+st+pw+tlh
-    +trayRow /* tray row (chip + name label + margins) */
+    +trayRow /* tray row (chip + count bubble + margins) */
     +40    /* board-wrap padding + bottom margin */
-    +28    /* body top padding (approx incl. safe area baseline) */
-    +76    /* fixed ad banner clearance */
-    +14;   /* safety */
+    +topOff /* measured top offset (incl. notch safe area) */
+    +94    /* fixed ad banner + guaranteed gap above it */
+    +16;   /* safety */
   const budgetH=Math.max(200,(window.innerHeight||800)-chrome);
   let cell=Math.min(budgetW/S.cols, budgetH/S.rows);
   cell=Math.max(24, Math.min(cell, 88));
@@ -1034,7 +1038,7 @@ function applyPreview(hr,hc,type,mode){
     }
     if(type==='R'||type==='B'||type==='Q'){            // show which box(es) stop this piece's line
       S.blocks.forEach(k=>{const [br,bc]=k.split(':').map(Number);
-        if(attacks(type,hr,hc,br,bc,null) && slideClear(hr,hc,br,bc,S.blocks)) S.cellEls[br][bc].classList.add('pv-stop');
+
       });
     }
     if(mode==='full'){                                   // verdict ring: is the target safe?
@@ -1177,35 +1181,16 @@ function onPaintMove(e){
 }
 function endPaint(){ window.removeEventListener('pointermove',onPaintMove); PAINT=null; }
 
-function mirrorGlyphs(type,r,c){                          // per-cell arrow that FOLLOWS the bend
-  const G=new Map(), CH={'-1,0':'\u2191','1,0':'\u2193','0,1':'\u2192','0,-1':'\u2190'};
-  if(!(type==='R'||type==='Q')||!SM().size) return G;
-  for(const d0 of [[1,0],[-1,0],[0,1],[0,-1]]){
-    let dr=d0[0],dc=d0[1],rr=r,cc=c,bend=0;
-    for(let g=0;g<80;g++){
-      rr+=dr;cc+=dc;
-      if(rr<0||cc<0||rr>=S.rows||cc>=S.cols) break;
-      const k=rr+':'+cc;
-      if(S.blocks.has(k)) break;
-      const m=SM().get(k);
-      if(m){ if(++bend>3) break; const nd=MIRREF[m][dr+','+dc]; dr=nd[0];dc=nd[1]; continue; }
-      if(!G.has(k)) G.set(k,CH[dr+','+dc]);
-    }
-  }
-  return G;
-}
-function flashReach(type,r,c){                            // brief ray flash after placing (all assist modes)
-  const undo=[], mg=mirrorGlyphs(type,r,c);
+function flashReach(type,r,c){                            // brief ray flash after placing: pure tint, no arrow icons
+  const undo=[];
   for(let rr=0;rr<S.rows;rr++)for(let cc=0;cc<S.cols;cc++){
     if(rr===r&&cc===c) continue;
     if(!attacks(type,r,c,rr,cc,S.blocks,SM())) continue;
     const el=S.cellEls[rr]&&S.cellEls[rr][cc]; if(!el) continue;
     el.classList.add('rayflash');
-    const a=document.createElement('span'); a.className='pvarr rayfade';
-    a.textContent=mg.get(rr+':'+cc)||dirGlyph(type,r,c,rr,cc); el.appendChild(a);
-    undo.push([el,a]);
+    undo.push(el);
   }
-  setTimeout(()=>undo.forEach(([el,a])=>{ el.classList.remove('rayflash'); a.remove(); }),730);
+  setTimeout(()=>undo.forEach(el=>el.classList.remove('rayflash')),730);
 }
 function tryPlace(type,r,c,fromR,fromC){
   if(SM().has(r+':'+c)){ if(fromR!=null) S.cells[fromR][fromC]=type; render(); renderTray(); renderStatus(); return; }
@@ -1633,8 +1618,8 @@ function startCheckmate(){
      anchors:new Set(),daily:false,chess:z,chessSel:null};
   $('powersRow').style.display='none';
   $('btnPrevLvl').style.display='none'; $('btnNextLvl').style.display='none';
-  $('lvlNum').textContent='\u00B7 Daily';
-  const bd=$('lvlBadge'); bd.style.display=''; bd.className='lvlbadge chessd'; bd.textContent='CHECKMATE DAILY';
+  $('lvlTitle').textContent='Checkmate Daily';
+  $('lvlBadge').style.display='none';
   $('trayLabel').textContent='White to move. Find the mate in 1!';
   $('tray').style.display='none'; document.getElementById('trayPad')&&($('trayPad').style.display='none');
   $('board').classList.remove('celebrate');

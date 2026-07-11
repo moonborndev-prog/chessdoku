@@ -47,6 +47,8 @@
   .title small{display:block;font-size:11px;letter-spacing:3px;color:var(--ink);font-weight:700;margin-bottom:1px}
   .status{display:flex;align-items:center;justify-content:center;gap:16px;margin:2px 0 10px;flex-wrap:wrap}
   .pill{background:var(--panel);box-shadow:var(--shadow);border-radius:999px;padding:8px 16px;display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px}
+  .pill.timer.low{color:#C24B42;animation:timerpulse .85s ease-in-out infinite}
+  @keyframes timerpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
   .pill .glyph{font-size:20px}
   .count-done{color:var(--sage-d)} .count-left{color:var(--ink-soft)}
   .hearts{display:flex;gap:4px;font-size:18px}
@@ -320,6 +322,10 @@
   .board-wrap.winglass .cell.d{background:color-mix(in srgb,var(--cell-d) 46%,transparent);transition:background 1s ease}
   .board-wrap.winglass .board{box-shadow:0 0 0 3px color-mix(in srgb,var(--cell-d) 55%,transparent)}
   .board-wrap.winglass .piece{filter:drop-shadow(0 2px 4px rgba(60,40,25,.4))}
+  /* on the glass board cell shades converge — unify all X's to the light tone */
+  .board-wrap.winglass .cell.l.amark::after,.board-wrap.winglass .cell.d.amark::after,
+  .board-wrap.winglass .cell.l.marked::after,.board-wrap.winglass .cell.d.marked::after{
+    color:rgba(255,168,160,.85)}
   /* city backdrop on its own layer: slightly zoomed-in during play, pulls back on win */
   #cityBg{position:fixed;inset:0;z-index:-1;pointer-events:none;display:none;
     background-size:cover;background-position:center top;background-repeat:no-repeat;
@@ -390,6 +396,7 @@
 
   <div class="status">
     <div class="pill" id="progressPill"><span class="glyph">♟️</span><span><span class="count-done" id="done">0</span><span class="count-left" id="total">/5</span></span></div>
+    <div class="pill timer" id="timerPill" style="display:none"><span class="glyph">⏱</span><span id="timerText">2:00</span></div>
     <div class="hearts" id="hearts"></div>
   </div>
 
@@ -418,8 +425,8 @@
 </div></div>
 
 <div class="scrim" id="loseScrim"><div class="card">
-  <div class="big">💔</div>
-  <h2>Out of hearts</h2>
+  <div class="big" id="loseBig">💔</div>
+  <h2 id="loseTitle">Out of hearts</h2>
   <p id="loseText">Not this time. Want to try again?</p>
   <button class="btn go" id="btnRefill" style="margin:0 auto 10px">📺 Watch ad to refill hearts</button>
   <button class="btn ghostb" id="btnRetry" style="margin:0 auto">↺ Try again</button>
@@ -922,7 +929,8 @@ function startLevel(level,ovr){
     $('tray').style.display=''; $('trayPad').style.display='';
   }
   setAssist(level);
-  $('trayLabel').style.display = level<=5 ? '' : 'none';
+  $('trayLabel').style.display = (level<=5 && !S.daily) ? '' : 'none';   // no tutorial copy in the daily
+  if(S.daily) startDailyTimer(); else { stopTimer(); $('timerPill').style.display='none'; }
   if(cfg.title)
     setTimeout(()=>showcaseBanner(cfg.title, cfg.pieces.length+' '+(PIECES[cfg.pieces[0]].name+'s').toUpperCase()+' · THE MAXIMUM'),380);
   if(level===6)
@@ -1298,7 +1306,41 @@ function loseHeart(r,c,type,offenders){
   else toast('Oops! Lost a heart 💔');
 }
 function lose(){
+  loseMode='hearts';
+  $('loseBig').textContent='💔'; $('loseTitle').textContent='Out of hearts';
+  $('btnRefill').textContent='📺 Watch ad to refill hearts';
   $('loseText').textContent=(S.chess||S.daily)?"Today's challenge didn't work out. Try again!":`Level ${S.level} didn't work out. Try again!`;
+  $('loseScrim').classList.add('show');
+}
+/* ---- daily challenge countdown (2:00) ---- */
+const DAILY_TIME=120;
+let timerIv=null, loseMode='hearts';
+function fmtT(s){ return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+function stopTimer(){ if(timerIv){ clearInterval(timerIv); timerIv=null; } }
+function runTimer(){
+  stopTimer();
+  timerIv=setInterval(()=>{
+    if(!S||!S.daily||S.won){ stopTimer(); return; }
+    if(document.querySelector('.scrim.show')) return;   // paused while a popup is open
+    S.timeLeft--;
+    $('timerText').textContent=fmtT(Math.max(0,S.timeLeft));
+    if(S.timeLeft<=15) $('timerPill').classList.add('low');
+    if(S.timeLeft===10){ Snd.init(); Snd.tone(680,0.09,'sine',0.16); Snd.tone(680,0.09,'sine',0.14,0.18); }
+    if(S.timeLeft<=0){ stopTimer(); timeUp(); }
+  },1000);
+}
+function startDailyTimer(){
+  S.timeLeft=DAILY_TIME;
+  const p=$('timerPill'); p.style.display=''; p.classList.remove('low');
+  $('timerText').textContent=fmtT(S.timeLeft);
+  runTimer();
+}
+function timeUp(){
+  Snd.wrong();
+  loseMode='time';
+  $('loseBig').textContent='⏱'; $('loseTitle').textContent="Time's up!";
+  $('btnRefill').textContent='📺 Watch ad for +60s';
+  $('loseText').textContent="Today's challenge didn't work out. Try again!";
   $('loseScrim').classList.add('show');
 }
 function checkWin(){
@@ -1444,6 +1486,7 @@ const GlyphFix={
 function win(){
   Snd.win(); Music.duck();
   S.won=true;                                           // freeze board input, level is done
+  stopTimer();
   if(S.level>=unlockedLevel) unlockedLevel=S.level+1;   // saga progress
   // reveal the full threat map: auto-mark on, X's cascade across the board
   if(!S.chess){
@@ -1470,7 +1513,7 @@ function win(){
     $('btnNext').textContent='Back to map';
   } else if(S.daily){
     const st=markDailyDone();
-    $('winText').textContent=`Daily challenge complete! Streak: ${st} ${st===1?'day':'days'}`;
+    $('winText').textContent=`Daily challenge complete! Streak: ${st} ${st===1?'day':'days'} · ${fmtT(Math.max(0,S.timeLeft||0))} left`;
     $('btnNext').textContent='Back to map';
   } else {
     $('winText').textContent=`Level ${S.level} complete!`;
@@ -1543,7 +1586,15 @@ document.addEventListener('click',e=>{
 },true);
 $('btnRetry').onclick=()=>{$('loseScrim').classList.remove('show'); if(S.chess) startCheckmate(); else if(S.daily) startDaily(); else startLevel(S.level);};
 $('btnRefill').onclick=()=>{
-  // TODO: gate behind a real rewarded-ad callback; on reward -> refill and resume the current board
+  // TODO: gate behind a real rewarded-ad callback; on reward -> refill/extend and resume the current board
+  if(loseMode==='time'){
+    S.timeLeft=60;
+    $('timerText').textContent=fmtT(S.timeLeft); $('timerPill').classList.remove('low');
+    runTimer();
+    $('loseScrim').classList.remove('show');
+    toast('+60 seconds ⏱');
+    return;
+  }
   S.hearts=3; renderStatus();
   $('loseScrim').classList.remove('show');
   toast('Hearts refilled ❤️❤️❤️');
@@ -1711,6 +1762,7 @@ function startCheckmate(){
      marks:new Set(),tool:'piece',autoMark:false,autoPaid:true,title:null,
      anchors:new Set(),daily:false,chess:z,chessSel:null};
   $('powersRow').style.display='none';
+  stopTimer(); $('timerPill').style.display='none';
   $('btnPrevLvl').style.display='none'; $('btnNextLvl').style.display='none';
   $('lvlTitle').textContent='Checkmate Daily';
   $('lvlBadge').style.display='none';
@@ -2155,7 +2207,7 @@ function scrollToCurrent(){
   const cur=scene._pts[Math.min(unlockedLevel,MAP_COUNT)-1];
   sc.scrollTop=Math.max(0, cur.y - sc.clientHeight*0.5);
 }
-function showMap(){ $('mapScreen').classList.add('show'); $('dailyDot').style.display=dailyDone()?'none':''; $('cmDot').style.display=cmDone()?'none':''; requestAnimationFrame(()=>{ buildMap(); scrollToCurrent(); updateCityLabel(); }); }
+function showMap(){ stopTimer(); $('mapScreen').classList.add('show'); $('dailyDot').style.display=dailyDone()?'none':''; $('cmDot').style.display=cmDone()?'none':''; requestAnimationFrame(()=>{ buildMap(); scrollToCurrent(); updateCityLabel(); }); }
 function showGame(level){ $('mapScreen').classList.remove('show'); startLevel(level); }
 $('btnPlay').onclick=()=>{ showGame(Math.min(unlockedLevel,MAP_COUNT)); };
 $('btnDaily').onclick=()=>{ Snd.init(); startDaily(); };
